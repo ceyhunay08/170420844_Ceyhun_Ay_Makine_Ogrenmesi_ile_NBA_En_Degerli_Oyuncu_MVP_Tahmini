@@ -85,10 +85,11 @@ def Data_prep():
     nba_data = Data_handle_missing_values(nba_data)
     
     
-    mvp_counts = nba_data['mvp_award'].value_counts()
-    plt.pie(mvp_counts, labels=mvp_counts.index, autopct='%1.1f%%')
-    plt.title('Distribution of MVP Award')
-    plt.show()
+    # mvp_counts = nba_data['mvp_award'].value_counts()
+    # plt.pie(mvp_counts, labels=mvp_counts.index, autopct='%1.1f%%')
+    # plt.title('Distribution of MVP Award')
+    # plt.show()
+    print(nba_data.columns.__len__())
     
 
 def Data_clean(data):
@@ -98,23 +99,29 @@ def Data_clean(data):
     data = data.drop(['mov'],axis=1)
     data = data.drop(['mov_adj'],axis=1)
     data = data.drop(['win_loss_pct'],axis=1)
-    
+    data = data.drop(['Tm'], axis=1)
+    data = data.drop(['Pos'], axis=1)
     print("Data cleaning...")
     
     return data
 def Data_handle_categorical(data):  
     print("Data encoding...")
     #One-hot encoding
-    data_encoded = pd.get_dummies(data, columns=['Tm', 'Pos'], drop_first=True)
-    return data_encoded
+    # data_encoded = pd.get_dummies(data, columns=['Pos'], drop_first=True)
+    return data
 
 def Data_handle_missing_values(data):
+    # Replace infinite values with NaN
+    data.replace([np.inf, -np.inf], np.nan, inplace=True)
     
-    #Imputing missing values
+    # Cap very large values
+    data = data.applymap(lambda x: np.nan if np.abs(x) > 1e10 else x)
+    
+    # Imputing missing values
     imputer = SimpleImputer(strategy='mean')
     data_imputed = pd.DataFrame(imputer.fit_transform(data), columns=data.columns)
     
-    #One-hot encoding
+    # One-hot encoding
     return data_imputed
 def Data_scale_split():
     
@@ -132,12 +139,12 @@ def Data_scale_split():
 
     correlation_matrix = nba_data.corr()
     
-    plt.figure(figsize=(16, 14))  # Increase the figure size
-    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', annot_kws={"size": 10})  # Adjust font size
-    plt.title('Correlation Matrix', fontsize=20)  # Increase title font size
-    plt.xticks(fontsize=12)  # Increase x-axis font size
-    plt.yticks(fontsize=12) 
-    plt.show()
+    # plt.figure(figsize=(16, 14))  # Increase the figure size
+    # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', annot_kws={"size": 10})  # Adjust font size
+    # plt.title('Correlation Matrix', fontsize=20)  # Increase title font size
+    # plt.xticks(fontsize=12)  # Increase x-axis font size
+    # plt.yticks(fontsize=12) 
+    # plt.show()
 
     
 def Train_models(X_train, y_train):
@@ -341,12 +348,14 @@ def predict_run():
     nba_data_pred = pd.read_csv("NBA_Player_Stats_23_24_with_calculations.csv")
     player = nba_data_pred['Player']
     nba_data_pred = Data_clean(nba_data_pred)
-
+    
     nba_data_pred = nba_data_pred.drop(['Player-additional'], axis=1)
     nba_data_pred = nba_data_pred.drop(['Rk'],axis=1)
 
+    nba_data_pred = Data_handle_categorical(nba_data_pred)
     nba_data_pred = Data_handle_missing_values(nba_data_pred)
     
+    print(nba_data_pred.columns.__len__())
     
     columns = list(nba_data_pred.columns)
     mp_index = columns.index('mp')
@@ -365,8 +374,16 @@ def predict_run():
     # Calculate feature importance
 
     
-    model = get_best_xgboost()
+    # model = get_best_xgboost()
+    # LSTM Model
+    model = keras.Sequential([
+        layers.Input(shape=(X_train.shape[1], 1)),
+        layers.LSTM(50, activation='relu', return_sequences=True),
+        layers.LSTM(50, activation='relu'),
+        layers.Dense(1)
+    ])
 
+    model.compile(optimizer='adam', loss='mean_squared_error')
     model.fit(X_train, y_train)
     y_pred = model.predict(nba_data_pred)
     
@@ -457,6 +474,8 @@ def rfe_run():
  
     print("Top 10 players with highest predicted MVP probability:")
     print(sorted_nba_data.head(30))
+    
+    
 def get_best_catboost():
     
     return CatBoostRegressor(random_state=42, depth=16, iterations=300, learning_rate=0.1,verbose = 10)
@@ -517,4 +536,4 @@ def testdata_fix():
     
 
 
-rfe_run()
+predict_run()
