@@ -37,6 +37,8 @@ from sklearn.svm import SVR
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
 
+#Process sürelerini tutmak için kod ekle , Hyperparameter tuning yap. Giriş Literatür.
+
 
 nba_data = pd.read_csv("NBA_Regular_Season_Player_Stats_With_Clutch_Score.csv")
 
