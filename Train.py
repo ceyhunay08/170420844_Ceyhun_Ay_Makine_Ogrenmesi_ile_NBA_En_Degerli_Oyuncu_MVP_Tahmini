@@ -26,18 +26,27 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
 from models import Model  
 import joblib
+from tqdm import tqdm
 
-
+playernames = []
 def Data_split():
     print("Data splitting...")
-    nba_data = pd.read_csv('datasets/dataset.csv')
+    nba_data = pd.read_csv('datasets/dataset_scaled.csv')
+    playernames = nba_data['Player']    
+    nba_data = nba_data.drop('Player', axis=1)
     X = nba_data.drop('mvp_award', axis=1)
     y = nba_data['mvp_award']
+    X = X[X['Season'].between(1997, 2017)]
+    y = y[X.index]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42,stratify=y) ## 80 % train, 20 % test
     return X_train, X_test, y_train, y_test
 
 def Model_train():
     X_train, X_test, y_train, y_test = Data_split()
+    # Reshape input data for RNN
+    X_train_rnn = np.expand_dims(X_train, axis=-1)
+    X_test_rnn = np.expand_dims(X_test, axis=-1)
+    
     # Classifier
     models = Model(x_train=X_train, y_train=y_train, class_weights=None)
     randomForest = models.getModels()['RandomForest']
@@ -47,8 +56,28 @@ def Model_train():
     gnn = models.getModels()['GNN']
     knn = models.getModels()['KNN']
     svm = models.getModels()['SVM']
+    ann = models.getModels()['ANN']
+    catboost = models.getModels()['CatBoost']
+    xgboost  = models.getModels()['XGBoost']
+    lightgbm = models.getModels()['LightGBM']
     
-    # Random Forest
+    catboost.fit(X_train, y_train)
+    catboost_accuracy = catboost.score(X_test, y_test)
+    catboost_report = classification_report(y_test, catboost.predict(X_test), output_dict=True)
+    joblib.dump(catboost, 'best_models/catboost_model.pkl')
+    
+    xgboost.fit(X_train, y_train)
+    xgboost_accuracy = xgboost.score(X_test, y_test)
+    xgboost_report = classification_report(y_test, xgboost.predict(X_test), output_dict=True)
+    joblib.dump(xgboost, 'best_models/xgboost_model.pkl')
+    
+    lightgbm.fit(X_train, y_train)
+    lightgbm_accuracy = lightgbm.score(X_test, y_test)
+    lightgbm_report = classification_report(y_test, lightgbm.predict(X_test), output_dict=True)
+    joblib.dump(lightgbm, 'best_models/lightgbm_model.pkl')
+    
+    
+
     randomForest.fit(X_train, y_train)
     y_pred_class = randomForest.predict(X_test)
     randomForest_accuracy = randomForest.score(X_test, y_test)
@@ -59,52 +88,68 @@ def Model_train():
       
     # RNN
     rnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    rnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=10, batch_size=32)
-    y_pred_rnn = rnn.predict(X_test.values.reshape(-1, X_test.shape[1], 1))
-    y_pred_rnn = (y_pred_rnn > 0.5).astype(int)
-    rnn_accuracy = rnn.evaluate(X_test.values.reshape(-1, X_test.shape[1], 1), y_test)[1]
-    rnn_report = classification_report(y_test, y_pred_rnn, output_dict=True)
-    joblib.dump(rnn, 'best_models/rnn_model.pkl')
+    rnn.fit(X_train_rnn, y_train, epochs=100, batch_size=32)
+    y_pred_class_rnn = rnn.predict(X_test_rnn)
+    rnn_accuracy = rnn.evaluate(X_test_rnn, y_test)
+    rnn_mae = mean_absolute_error(y_test, y_pred_class_rnn)
+    y_pred_class_rnn_binary = (y_pred_class_rnn > 0.5).astype(int)
+    rnn_report = classification_report(y_test, y_pred_class_rnn_binary, output_dict=True)
+    # Save the RNN model
+    rnn.save('best_models/rnn_model.h5')
     
     # LSTM
     lstm.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    lstm.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=10, batch_size=32, class_weight={0: 1, 1: 10})
+    lstm.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=100, batch_size=32)
     y_pred_lstm = lstm.predict(X_test.values.reshape(-1, X_test.shape[1], 1))
     y_pred_lstm = (y_pred_lstm > 0.5).astype(int)
     lstm_accuracy = lstm.evaluate(X_test.values.reshape(-1, X_test.shape[1], 1), y_test)[1]
     lstm_report = classification_report(y_test, y_pred_lstm, output_dict=True)
-    joblib.dump(lstm, 'best_models/lstm_model.pkl')
+    lstm.save('best_models/lstm_model.h5')
     
     # CNN
     cnn.compile(optimizer='sgd', loss='binary_crossentropy', metrics=['accuracy'])
-    cnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=20, batch_size=32)
+    cnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=100, batch_size=32)
     y_pred_cnn = cnn.predict(X_test.values.reshape(-1, X_test.shape[1], 1))
     y_pred_cnn = (y_pred_cnn > 0.5).astype(int)
     cnn_accuracy = cnn.evaluate(X_test.values.reshape(-1, X_test.shape[1], 1), y_test)[1]
     cnn_report = classification_report(y_test, y_pred_cnn, output_dict=True)
-    joblib.dump(cnn, 'best_models/cnn_model.pkl')
+    cnn.save('best_models/cnn_model.h5')
     
- 
+    # GNN
     gnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    gnn.fit(X_train, y_train, epochs=10, batch_size=32)
+    gnn.fit(X_train, y_train, epochs=100, batch_size=32)
     y_pred_gnn = gnn.predict(X_test)
     y_pred_gnn = (y_pred_gnn > 0.5).astype(int)
     gnn_accuracy = gnn.evaluate(X_test, y_test)[1]
     gnn_report = classification_report(y_test, y_pred_gnn, output_dict=True)
-    joblib.dump(gnn, 'best_models/gnn_model.pkl')
+    gnn.save('best_models/gnn_model.h5')
 
+    # ANN
+    ann.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    ann.fit(X_train, y_train, epochs=100, batch_size=32)
+    ann_accuracy = ann.evaluate(X_test, y_test)[1]
+    y_pred_ann = (ann.predict(X_test) > 0.5).astype(int)
+    ann_report = classification_report(y_test, y_pred_ann, output_dict=True)
+    ann.save('best_models/ann_model.h5')
+    
     knn.fit(X_train, y_train)
     knn_accuracy = knn.score(X_test, y_test)
     knn_report = classification_report(y_test, knn.predict(X_test), output_dict=True)
     joblib.dump(knn, 'best_models/knn_model.pkl')
     
-    svm.fit(X_train, y_train)
+  
+    svm = SVC()
+    for _ in tqdm(range(1), desc="Fitting SVM"):
+        svm.fit(X_train, y_train)
+   
     svm_accuracy = svm.score(X_test, y_test)
     svm_report = classification_report(y_test, svm.predict(X_test), output_dict=True)
     joblib.dump(svm, 'best_models/svm_model.pkl')
+
+
     
-    
-   
+# Wrap the fit method with tqdm to show progress
+ 
     randomForest_df = pd.DataFrame(randomForest_report).transpose()
     rnn_report_df = pd.DataFrame(rnn_report).transpose()
     lstm_report_df = pd.DataFrame(lstm_report).transpose()
@@ -112,7 +157,13 @@ def Model_train():
     gnn_report_df = pd.DataFrame(gnn_report).transpose()
     knn_report_df = pd.DataFrame(knn_report).transpose()
     svm_report_df = pd.DataFrame(svm_report).transpose()
+    ann_report_df = pd.DataFrame(ann_report).transpose()
+    catboost_df = pd.DataFrame(catboost_report).transpose()
+    xgboost_df = pd.DataFrame(xgboost_report).transpose()
+    lightgbm_df = pd.DataFrame(lightgbm_report).transpose()
     
+    
+
 
     # Function to rank models based on their performance
     def rank_models():
@@ -121,7 +172,14 @@ def Model_train():
             "RNN": rnn,
             "LSTM": lstm,
             "CNN": cnn,
-            "GNN": gnn
+            "GNN": gnn,
+            "KNN": knn,
+            "SVM": svm,
+            "ANN": ann,
+            "CatBoost": catboost,
+            "XGBoost": xgboost,
+            "LightGBM": lightgbm
+            
         }
 
         # Collecting metrics
@@ -147,6 +205,18 @@ def Model_train():
             },
             "SVM": {
                 "Accuracy": svm_accuracy
+            },
+            "ANN": {
+                "Accuracy": ann_accuracy
+            },
+            "CatBoost": {
+                "Accuracy": catboost_accuracy
+            },
+            "XGBoost": {
+                "Accuracy": xgboost_accuracy
+            },
+            "LightGBM": {
+                "Accuracy": lightgbm_accuracy
             }
         }
 
@@ -154,7 +224,7 @@ def Model_train():
         classification_models = {k: v for k, v in metrics.items() if "Accuracy" in v}
         
 
-        ranked_classification = sorted(classification_models.items(), key=lambda x: x[1]["Accuracy"], reverse=True)
+        ranked_classification = sorted(classification_models.items(), key=lambda x: float(x[1]["Accuracy"]), reverse=True)
 
         print("Ranked Classification Models:")
         for rank, (model, metric) in enumerate(ranked_classification, 1):
@@ -169,11 +239,102 @@ def Model_train():
             gnn_report_df.to_excel(writer, sheet_name='GNN Report')
             knn_report_df.to_excel(writer, sheet_name='KNN Report')
             svm_report_df.to_excel(writer, sheet_name='SVM Report')
-            
+            ann_report_df.to_excel(writer, sheet_name='ANN Report')
+            catboost_df.to_excel(writer, sheet_name='CatBoost Report')
+            xgboost_df.to_excel(writer, sheet_name='XGBoost Report')
+            lightgbm_df.to_excel(writer, sheet_name='LightGBM Report')
 
     rank_models()
 
 Model_train()
+
+
+def Model_train_withcross():
+    X_train, X_test, y_train, y_test = Data_split()
+    # Reshape input data for RNN
+    X_train_rnn = np.expand_dims(X_train, axis=-1)
+    X_test_rnn = np.expand_dims(X_test, axis=-1)
+    
+    # Classifier
+    models = Model(x_train=X_train, y_train=y_train, class_weights=None)
+    randomForest = models.getModels()['RandomForest']
+    rnn = models.getModels()['RNN']
+    lstm = models.getModels()['LSTM']
+    cnn = models.getModels()['CNN']
+    gnn = models.getModels()['GNN']
+    knn = models.getModels()['KNN']
+    svm = models.getModels()['SVM']
+    
+    skf = KFold(n_splits=5, shuffle=True, random_state=42)
+    
+    def cross_validate_model(model, X, y):
+        accuracies = []
+        reports = []
+        for train_index, test_index in skf.split(X, y):
+            X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
+            y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]
+            model.fit(X_train_fold, y_train_fold)
+            y_pred_fold = model.predict(X_test_fold)
+            accuracy = accuracy_score(y_test_fold, y_pred_fold)
+            report = classification_report(y_test_fold, y_pred_fold, output_dict=True)
+            accuracies.append(accuracy)
+            reports.append(report)
+        return np.mean(accuracies), reports
+    
+    # Random Forest
+    randomForest_accuracy, randomForest_reports = cross_validate_model(randomForest, X_train, y_train)
+    joblib.dump(randomForest, 'best_modelsc/random_forest_model.pkl')
+    
+    # RNN
+    rnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    rnn.fit(X_train_rnn, y_train, epochs=10, batch_size=32)
+    rnn_accuracy, rnn_reports = cross_validate_model(rnn, X_train_rnn, y_train)
+    joblib.dump(rnn, 'best_modelsc/rnn_model.pkl')
+    
+    # LSTM
+    lstm.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    lstm.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=10, batch_size=32)
+    lstm_accuracy, lstm_reports = cross_validate_model(lstm, X_train.values.reshape(-1, X_train.shape[1], 1), y_train)
+    joblib.dump(lstm, 'best_modelsc/lstm_model.pkl')
+    
+    # CNN
+    cnn.compile(optimizer='sgd', loss='binary_crossentropy', metrics=['accuracy'])
+    cnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=20, batch_size=32)
+    cnn_accuracy, cnn_reports = cross_validate_model(cnn, X_train.values.reshape(-1, X_train.shape[1], 1), y_train)
+    joblib.dump(cnn, 'best_modelsc/cnn_model.pkl')
+    
+    # GNN
+    gnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    gnn.fit(X_train, y_train, epochs=10, batch_size=32)
+    gnn_accuracy, gnn_reports = cross_validate_model(gnn, X_train, y_train)
+    joblib.dump(gnn, 'best_modelsc/gnn_model.pkl')
+    
+    # KNN
+    knn_accuracy, knn_reports = cross_validate_model(knn, X_train, y_train)
+    joblib.dump(knn, 'best_modelsc/knn_model.pkl')
+    
+    # SVM
+    svm_accuracy, svm_reports = cross_validate_model(svm, X_train, y_train)
+    joblib.dump(svm, 'best_modelsc/svm_model.pkl')
+    
+    # Save metrics to Excel
+    with pd.ExcelWriter('crossvalidation/model_metrics_with_cross_validation.xlsx') as writer:
+        for i, report in enumerate(randomForest_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'RandomForest Report Fold {i+1}')
+        for i, report in enumerate(rnn_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'RNN Report Fold {i+1}')
+        for i, report in enumerate(lstm_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'LSTM Report Fold {i+1}')
+        for i, report in enumerate(cnn_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'CNN Report Fold {i+1}')
+        for i, report in enumerate(gnn_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'GNN Report Fold {i+1}')
+        for i, report in enumerate(knn_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'KNN Report Fold {i+1}')
+        for i, report in enumerate(svm_reports):
+            pd.DataFrame(report).transpose().to_excel(writer, sheet_name=f'SVM Report Fold {i+1}')
+
+
 
 def Model_Train_Cross():
     nba_data = pd.read_csv('dataset.csv')
@@ -654,4 +815,4 @@ def hyperparameter_tuning():
                 fold += 1
 
         results_df = pd.DataFrame(results)
-        results_df.to_excel('best_models/model_metrics.xlsx', index=False)
+        results_df.to_excel('best_models/model_metrics.xlsx', index=False) 

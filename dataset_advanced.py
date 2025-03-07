@@ -1,193 +1,178 @@
-import json
 import pandas as pd
 import numpy as np
-
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestRegressor,RandomForestClassifier, StackingClassifier
-from sklearn.tree import DecisionTreeRegressor
-import xgboost as xgb
-import lightgbm as lgb
-import tensorflow as tf
-from tensorflow import keras 
-from keras import layers, models
-from keras.losses import MeanSquaredError
-from catboost import CatBoostClassifier, CatBoostRegressor
-from sklearn.model_selection import GridSearchCV, KFold
-import seaborn as sns
-from sklearn.ensemble import StackingRegressor
-from sklearn.linear_model import BayesianRidge, ElasticNet, LinearRegression, LogisticRegression
-from sklearn.model_selection import train_test_split,StratifiedKFold, cross_val_predict
-from sklearn.metrics import mean_absolute_error,classification_report, accuracy_score
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from sklearn.svm import SVC, SVR
-from sklearn.naive_bayes import GaussianNB, MultinomialNB
-from sklearn.model_selection import cross_val_score
-import time
-from models import Model as md
-import optuna
-import matplotlib.pyplot as plt
-#imputer for missing values
 from sklearn.impute import SimpleImputer
-from sklearn.feature_selection import RFE
-from sklearn.svm import SVR
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report
-#Process sürelerini tutmak için kod ekle , Hyperparameter tuning yap. Giriş Literatür.
-from models import Model  
+from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-nba_data = pd.read_csv("NBA_Regular_Season_Player_Stats_With_Clutch_Score.csv")
+# Load the dataset
+nba_data = pd.read_csv("datasets/updated_NBA_Data_With_Standing.csv")
 
+# Global variables
 columns = []
 class_weights = {}
+playernames = []
+sub = pd.DataFrame()
 def Data_prep():
     print("Data preparing...")
-    global nba_data
-    
+    global nba_data, playernames, columns, class_weights,sub
+
     # Clean the data
     mvps = nba_data.groupby('Season').max('award_share')
-
-# add MVP column to mvps dataframe
     mvps["mvp"] = True
 
-    # join the MVP column to original data, fill the rest with False
-    nba_data = nba_data.merge(mvps[["award_share", "mvp"]], on = ["Season", "award_share"], how = "left")
+    # Ensure all seasons are included
+
+    # Join the MVP column to original data, fill the rest with False
+    nba_data = nba_data.merge(mvps[["award_share", "mvp"]], on=["Season", "award_share"], how="left")
     nba_data["mvp_award"] = nba_data["mvp"].fillna(False)
     
-      
+
+    # Drop unnecessary columns
     
+    # Create a new DataFrame to hold the required column
+
+   
     nba_data = Data_clean(nba_data)
+
+    # Handle outliers
+    print("Handling outliers...")
     
-    # Check for outliers
-    print("Checking for outliers...")
-    numeric_columns = nba_data.select_dtypes(include=[np.number]).columns
-    for column in numeric_columns:
-        Q1 = nba_data[column].quantile(0.25)
-        Q3 = nba_data[column].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        outliers = nba_data[(nba_data[column] < lower_bound) | (nba_data[column] > upper_bound)]
-        print(f"Number of outliers in {column}: {len(outliers)}")
-        
+    sub = nba_data[['mvp_award', 'Player', 'Season']]
+    nba_data = nba_data.drop(['mvp_award', 'Player', 'Season'], axis=1)
     
-        
-    # Fill null and NaN values with appropriate method
+    
+    nba_data = handle_outliers(nba_data)
+    # Handle missing values and encode categorical data
+
+    nba_data = Data_handle_missing_values(nba_data)
     
     
     nba_data = Data_handle_categorical(nba_data)
-    nba_data = Data_handle_missing_values(nba_data)
 
-    mvp_means = nba_data[nba_data['mvp_award'] == True].mean()
-    print("Mean of each column for MVPs:")
-    print(mvp_means)
-    # Apply SMOTE to balance the dataset
     
     
-    print("Applying SMOTE to balance the dataset...")
-    X = nba_data.drop('mvp_award', axis=1)
-    y = nba_data['mvp_award']
-
-    smote = SMOTE(random_state=42)
-    X_resampled, y_resampled = smote.fit_resample(X, y)
-
-    # Combine the resampled data back into a single DataFrame
-    nba_data_resampled = pd.DataFrame(X_resampled, columns=X.columns)
-    nba_data_resampled['mvp_award'] = y_resampled
-
-    # Update the global nba_data with the resampled data
-    nba_data = nba_data_resampled
-    #Data_Distribution(nba_data)
-
-    # Split the dataset by season
-    seasons = nba_data['Season'].unique()
-    scaled_data = []
-
-    # Scale data based on the season
-    scaler = MinMaxScaler()
+    #merge the data
+    nba_data = pd.concat([nba_data,sub], axis=1)
     
-    for season in seasons:
-        season_data = nba_data[nba_data['Season'] == season]
-        season_data_scaled = pd.DataFrame(scaler.fit_transform(season_data.drop('Season', axis=1)), columns=season_data.columns.drop('Season'))
-        season_data_scaled['Season'] = season  # Add the season column back
-        scaled_data.append(season_data_scaled)
+    # print(nba_data)
+    # print(nba_data.groupby('Season')['mvp_award'].sum())
+    
+    nba_data['mvp_award'] = nba_data['mvp_award'].apply(lambda x: 1 if x > 0.5 else 0)
+    
 
-    # Combine the scaled data back into a single DataFrame
-    nba_data_scaled = pd.concat(scaled_data, axis=0)
+
+    # # Apply SMOTE to balance the dataset (only on training data)
+    # print("Applying SMOTE to balance the dataset...")
+    # # Separate the Player column before applying SMOTE
+    # X_train_no_player = X_train.drop('Player', axis=1)
+    
+    # smote = SMOTE(random_state=42)
+    # X_train_resampled, y_train_resampled = smote.fit_resample(X_train_no_player, y_train)
+    
+    # # Add the Player column back to the resampled data
+    # # Create a new DataFrame for the resampled data
+    # X_train_resampled = pd.DataFrame(X_train_resampled, columns=X_train_no_player.columns)
+
+    # # Add the Player column back to the resampled data
+    # X_train_resampled['Player'] = np.tile(X_train['Player'].values, int(np.ceil(len(X_train_resampled) / len(X_train['Player']))))[:len(X_train_resampled)]
+
+    # # Combine the resampled data back into a single DataFrame
    
-    # Save the scaled dataset to a CSV file
-    nba_data_scaled.to_csv('dataset.csv', index=False)
-    print("Scaled dataset saved as dataset.csv")
+
+    # Scale the data
+   
+    print("Scaling the data...")
+    scaler = MinMaxScaler()
+
+    nba_data_scaled = scaler.fit_transform(nba_data.drop('Season', axis=1).drop('Player', axis=1))
     
-    global class_weights
+    # Ensure columns variable has the correct number of column names
+    columns = nba_data.drop('Season', axis=1).drop('Player', axis=1).columns
+    nba_data_scaled = pd.DataFrame(nba_data_scaled, columns=columns)
+    nba_data_scaled['Season'] = nba_data['Season']
+    nba_data_scaled['Player'] = nba_data['Player']
+
+    
+    nba_data_scaled.to_csv("datasets/dataset_scaled.csv", index=False)
+    print("Scaled datasets saved as train_scaled.csv and test_scaled.csv")
+
     # Assign class weights based on the class distribution
-    class_counts = nba_data['mvp_award'].value_counts()
-    total_samples = len(nba_data)
-    class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
-    print("Class weights:", class_weights)
-    
+
+
 def Data_clean(data):
-    
-    data = data.drop(['Player'], axis=1)
-    data = data.drop(["award_share"],axis=1)
-    data = data.drop(['mvp'],axis=1)
-    
-    global columns 
+
+    data = data.drop(["award_share"], axis=1)
+    data = data.drop(['mvp'], axis=1)
+
+    global columns
     columns = data.columns
-    
+
     print("Data cleaning...")
-    
-   # 10 Dk dan fazla oynayanlar
-    data = data.drop(nba_data[nba_data["MP"] < 10].index)
-    
+
+    # # Drop players with less than 10 minutes played
+    # data = data.drop(data[data["MP"] < 10].index)
+
     return data
 
-def Data_handle_categorical(data):  
+def handle_outliers(data):
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    for column in numeric_columns:
+        if column == 'mvp_award':
+            continue
+        Q1 = data[column].quantile(0.25)
+        Q3 = data[column].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        data[column] = np.where(data[column] < lower_bound, lower_bound, data[column])
+        data[column] = np.where(data[column] > upper_bound, upper_bound, data[column])
+    return data
+
+def Data_handle_categorical(data):
     print("Data encoding...")
-    #One-hot encoding
-    data_encoded = pd.get_dummies(data, columns=['Tm', 'Pos'], drop_first=True)
-    return data_encoded
+
+    categorical_columns = data.select_dtypes(include=['object']).columns
+    
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+
+    # Create a column transformer for preprocessing
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', SimpleImputer(strategy='mean'), numeric_columns),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_columns)
+        ])
+
+    # Apply the preprocessing
+    data = preprocessor.fit_transform(data)
+    encoded_feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out(categorical_columns)
+    all_feature_names = np.concatenate([numeric_columns, encoded_feature_names])
+    # Convert back to DataFrame
+    data = pd.DataFrame(data, columns=all_feature_names)
+    return data
 
 def Data_handle_missing_values(data):
-    
-    #Imputing missing values
-    imputer = SimpleImputer(strategy='mean')
-    data_imputed = pd.DataFrame(imputer.fit_transform(data), columns=data.columns)
-    
-    #One-hot encoding
-    return data_imputed
+    print("Handling missing values...")
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    categorical_columns = data.select_dtypes(include=['object']).columns
 
-def Data_Distribution(nba_data):
-    global columns
-    
-    column_for_removing = columns.drop(['mvp_award'])
-    column_for_removing = column_for_removing.drop(['Pos'])
-    column_for_removing = column_for_removing.drop(['Tm'])
-    column_for_removing = column_for_removing.drop(['Season'])
-    
-    for column in column_for_removing:
-        print(f"Distribution of {column}:")
-        print(nba_data[column].describe())
-        print(f"Mean of {column}: {nba_data[column].mean()}")
-        
-        # Plot the distribution
-        plt.figure(figsize=(10, 6))
-        sns.histplot(nba_data[column], kde=True, bins=30, label='All Players')
-        
-        # Plot the distribution for MVPs
-        sns.histplot(nba_data[nba_data['mvp_award'] == True][column], kde=True, bins=30, color='red', label='MVPs')
-        
-        plt.title(f'Distribution of {column}')
-        plt.xlabel(column)
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.show()
+    # Impute missing values
+    numeric_imputer = SimpleImputer(strategy='mean')
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
+
+    data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
+    data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
+
+    return data
 
 
 def main():
     Data_prep()
-    
 
 if __name__ == "__main__":
     main()

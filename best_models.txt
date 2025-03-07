@@ -1,0 +1,7 @@
+Best Neural Network Model: <keras.engine.sequential.Sequential object at 0x00000230BC614C10>
+Best Neural Network Params: {'optimizer': 'adam', 'units': 50}
+Best Neural Network Score: 0.9979090433873498
+
+Best Machine Learning Model: LGBMClassifier(class_weight={0: 1, 1: 450.05882352941177}, n_estimators=200)
+Best Machine Learning Params: {'learning_rate': 0.1, 'n_estimators': 200, 'num_leaves': 31}
+Best Machine Learning Score: 0.9986929812203567
