@@ -97,10 +97,8 @@ best_models = {
     'CatBoost': joblib.load('best_models/catboost_model.pkl'),
     'LightGBM': joblib.load('best_models/lightgbm_model.pkl'),
     'XGBoost': joblib.load('best_models/xgboost_model.pkl'),
-    'CNN': tf.keras.models.load_model('best_models/cnn_model.h5'),
-    'RNN': tf.keras.models.load_model('best_models/rnn_model.h5'),
-    'GNN': tf.keras.models.load_model('best_models/gnn_model.h5'),
-    'LSTM': tf.keras.models.load_model('best_models/lstm_model.h5'),
+    'CNN': tf.keras.models.load_model('best_modelc/cnn_model.h5'),
+    'GNN': tf.keras.models.load_model('best_modelc/gnn_model.h5'),
     'ANN': tf.keras.models.load_model('best_models/ann_model.h5')
     
 }
@@ -108,27 +106,17 @@ best_models = {
 playernames = nba_data['Player']
 
 # nba_data['Season'] = nba_data['Season'].astype(str)
-print(nba_data['Season'].dtype)
-print("Madrisistas")
+
 nba_data = nba_data[nba_data['Season'].isin([2018, 2019, 2020, 2021, 2022])]
-print(nba_data['Season'])
-print("Bum")
-print(nba_data['Season'].unique())
-print("Selam")
-print(nba_data.groupby('Season')['mvp_award'])
-print("Selaaaamm")
+
 seasons = nba_data.groupby('Season')
-for season, data in seasons:
-    print(f"Season: {season}")
-    print(data['mvp_award'])
-print("Naber")
+
 # Group by 'Season' and sum 'mvp_award'
 grouped_data = nba_data.groupby('Season')['mvp_award'].sum()
 
 # Convert the grouped data to a list
 grouped_data_list = grouped_data.tolist()
-print(grouped_data_list)
-print("Grup liste")
+
 # Alternatively, iterate over the groups
 for season, mvp_award_sum in grouped_data.items():
     print(f"Season: {season}, MVP Award Sum: {mvp_award_sum}")

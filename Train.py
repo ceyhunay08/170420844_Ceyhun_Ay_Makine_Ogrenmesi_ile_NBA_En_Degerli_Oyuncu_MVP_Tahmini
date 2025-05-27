@@ -28,11 +28,12 @@ from models import Model
 import joblib
 from tqdm import tqdm
 
-playernames = []
+playernames = pd.Series()
 def Data_split():
     print("Data splitting...")
     nba_data = pd.read_csv('datasets/dataset_scaled.csv')
-    playernames = nba_data['Player']    
+    global playernames
+    playernames = nba_data['Player']
     nba_data = nba_data.drop('Player', axis=1)
     X = nba_data.drop('mvp_award', axis=1)
     y = nba_data['mvp_award']
@@ -50,8 +51,6 @@ def Model_train():
     # Classifier
     models = Model(x_train=X_train, y_train=y_train, class_weights=None)
     randomForest = models.getModels()['RandomForest']
-    rnn = models.getModels()['RNN']
-    lstm = models.getModels()['LSTM']
     cnn = models.getModels()['CNN']
     gnn = models.getModels()['GNN']
     knn = models.getModels()['KNN']
@@ -64,17 +63,17 @@ def Model_train():
     catboost.fit(X_train, y_train)
     catboost_accuracy = catboost.score(X_test, y_test)
     catboost_report = classification_report(y_test, catboost.predict(X_test), output_dict=True)
-    joblib.dump(catboost, 'best_models/catboost_model.pkl')
+    # joblib.dump(catboost, 'best_modelc/catboost_model.pkl')
     
     xgboost.fit(X_train, y_train)
     xgboost_accuracy = xgboost.score(X_test, y_test)
     xgboost_report = classification_report(y_test, xgboost.predict(X_test), output_dict=True)
-    joblib.dump(xgboost, 'best_models/xgboost_model.pkl')
+    # joblib.dump(xgboost, 'best_modelc/xgboost_model.pkl')
     
     lightgbm.fit(X_train, y_train)
     lightgbm_accuracy = lightgbm.score(X_test, y_test)
     lightgbm_report = classification_report(y_test, lightgbm.predict(X_test), output_dict=True)
-    joblib.dump(lightgbm, 'best_models/lightgbm_model.pkl')
+    # joblib.dump(lightgbm, 'best_modelc/lightgbm_model.pkl')
     
     
 
@@ -84,75 +83,72 @@ def Model_train():
     randomForest_mae = mean_absolute_error(y_test, y_pred_class)
     randomForest_report = classification_report(y_test, y_pred_class, output_dict=True)
     # Save the Random Forest model
-    joblib.dump(randomForest, 'best_models/random_forest_model.pkl')
+    # joblib.dump(randomForest, 'best_modelc/random_forest_model.pkl')
       
-    # RNN
-    rnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    rnn.fit(X_train_rnn, y_train, epochs=100, batch_size=32)
-    y_pred_class_rnn = rnn.predict(X_test_rnn)
-    rnn_accuracy = rnn.evaluate(X_test_rnn, y_test)
-    rnn_mae = mean_absolute_error(y_test, y_pred_class_rnn)
-    y_pred_class_rnn_binary = (y_pred_class_rnn > 0.5).astype(int)
-    rnn_report = classification_report(y_test, y_pred_class_rnn_binary, output_dict=True)
-    # Save the RNN model
-    rnn.save('best_models/rnn_model.h5')
-    
-    # LSTM
-    lstm.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    lstm.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=100, batch_size=32)
-    y_pred_lstm = lstm.predict(X_test.values.reshape(-1, X_test.shape[1], 1))
-    y_pred_lstm = (y_pred_lstm > 0.5).astype(int)
-    lstm_accuracy = lstm.evaluate(X_test.values.reshape(-1, X_test.shape[1], 1), y_test)[1]
-    lstm_report = classification_report(y_test, y_pred_lstm, output_dict=True)
-    lstm.save('best_models/lstm_model.h5')
-    
     # CNN
     cnn.compile(optimizer='sgd', loss='binary_crossentropy', metrics=['accuracy'])
-    cnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=100, batch_size=32)
+    cnn.fit(X_train.values.reshape(-1, X_train.shape[1], 1), y_train, epochs=1, batch_size=32)
     y_pred_cnn = cnn.predict(X_test.values.reshape(-1, X_test.shape[1], 1))
-    y_pred_cnn = (y_pred_cnn > 0.5).astype(int)
+    
+    y_pred_cnn = np.zeros_like(y_pred_cnn)
+    top_indices = np.argsort(y_pred_cnn, axis=0)[-4:]  # Get indices of top 4 predictions
+    y_pred_cnn[top_indices] = 1
+    # Identify the real MVPs and predicted MVPs
+    real_mvp_indices = y_test[y_test == 1].index
+    predicted_mvp_indices = np.where(y_pred_cnn == 1)[0]
+
+    # Map indices to player names
+    real_mvps = playernames.iloc[real_mvp_indices]
+    predicted_mvps = playernames.iloc[predicted_mvp_indices]
+
+    # Print the results
+    print("Real MVPs:")
+    print(real_mvps)
+
+    print("\nPredicted MVPs:")
+    print(predicted_mvps)
     cnn_accuracy = cnn.evaluate(X_test.values.reshape(-1, X_test.shape[1], 1), y_test)[1]
+    
     cnn_report = classification_report(y_test, y_pred_cnn, output_dict=True)
-    cnn.save('best_models/cnn_model.h5')
+    # cnn.save('best_modelc/cnn_model.h5')
     
     # GNN
     gnn.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     gnn.fit(X_train, y_train, epochs=100, batch_size=32)
     y_pred_gnn = gnn.predict(X_test)
+    
     y_pred_gnn = (y_pred_gnn > 0.5).astype(int)
     gnn_accuracy = gnn.evaluate(X_test, y_test)[1]
     gnn_report = classification_report(y_test, y_pred_gnn, output_dict=True)
-    gnn.save('best_models/gnn_model.h5')
+    # gnn.save('best_modelc/gnn_model.h5')
 
     # ANN
     ann.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     ann.fit(X_train, y_train, epochs=100, batch_size=32)
     ann_accuracy = ann.evaluate(X_test, y_test)[1]
-    y_pred_ann = (ann.predict(X_test) > 0.5).astype(int)
+    y_true = ann.predict(X_test)
+    y_pred_ann = (y_true > 0.5).astype(int)
     ann_report = classification_report(y_test, y_pred_ann, output_dict=True)
-    ann.save('best_models/ann_model.h5')
+    # ann.save('best_models/ann_model.h5')
     
     knn.fit(X_train, y_train)
     knn_accuracy = knn.score(X_test, y_test)
     knn_report = classification_report(y_test, knn.predict(X_test), output_dict=True)
-    joblib.dump(knn, 'best_models/knn_model.pkl')
+    # joblib.dump(knn, 'best_modelc/knn_model.pkl')
     
   
-    svm = SVC()
+    svm = SVC( kernel='linear', probability=True)
     for _ in tqdm(range(1), desc="Fitting SVM"):
         svm.fit(X_train, y_train)
    
     svm_accuracy = svm.score(X_test, y_test)
     svm_report = classification_report(y_test, svm.predict(X_test), output_dict=True)
-    joblib.dump(svm, 'best_models/svm_model.pkl')
+    # joblib.dump(svm, 'best_modelc/svm_model.pkl')
 
 
     
-# Wrap the fit method with tqdm to show progress
- 
+
     randomForest_df = pd.DataFrame(randomForest_report).transpose()
-    rnn_report_df = pd.DataFrame(rnn_report).transpose()
-    lstm_report_df = pd.DataFrame(lstm_report).transpose()
     cnn_report_df = pd.DataFrame(cnn_report).transpose()  
     gnn_report_df = pd.DataFrame(gnn_report).transpose()
     knn_report_df = pd.DataFrame(knn_report).transpose()
@@ -163,14 +159,9 @@ def Model_train():
     lightgbm_df = pd.DataFrame(lightgbm_report).transpose()
     
     
-
-
-    # Function to rank models based on their performance
     def rank_models():
         models = {
             "RandomForestClassifier": randomForest,
-            "RNN": rnn,
-            "LSTM": lstm,
             "CNN": cnn,
             "GNN": gnn,
             "KNN": knn,
@@ -187,12 +178,6 @@ def Model_train():
             "RandomForestClassifier": {
                 "Accuracy": randomForest_accuracy,
                 "MAE": randomForest_mae
-            },
-            "RNN": {
-                "Accuracy": rnn_accuracy
-            },
-            "LSTM": {
-                "Accuracy": lstm_accuracy
             },
             "CNN": {
                 "Accuracy": cnn_accuracy
@@ -231,10 +216,8 @@ def Model_train():
             print(f"{rank}. {model} - Accuracy: {metric['Accuracy']}")
 
         # Save metrics to Excel
-        with pd.ExcelWriter('results/model_metrics.xlsx') as writer:
+        with pd.ExcelWriter('results/model_metrics_try3.xlsx') as writer:
             randomForest_df.to_excel(writer, sheet_name='Classifier Report')
-            rnn_report_df.to_excel(writer, sheet_name='RNN Report')
-            lstm_report_df.to_excel(writer, sheet_name='LSTM Report')
             cnn_report_df.to_excel(writer, sheet_name='CNN Report')
             gnn_report_df.to_excel(writer, sheet_name='GNN Report')
             knn_report_df.to_excel(writer, sheet_name='KNN Report')
